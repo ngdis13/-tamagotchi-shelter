@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.env
+tamagotchi.db
+
+# macOS
+.DS_Store
+
+# Node/Sass cache
+.sass-cache/
+.pnpm-store/

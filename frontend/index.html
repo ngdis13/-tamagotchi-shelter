@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>🌸 Тамагочи Приют 🌸</title>
+    <!-- Пиксельный ретро-шрифт -->
+    <link href="https://googleapis.com" rel="stylesheet">
+    <!-- Скомпилированные стили, которые генерируются из вашего SCSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="main-container">
+        
+        <!-- Шапка -->
+        <div class="title-box">
+            <h1>🌸 ТАМАГОЧИ ПРИЮТ 🌸</h1>
+            <p>Подари дом виртуальному малышу и корми его вовремя!</p>
+        </div>
+
+        <!-- Контентная область -->
+        <div class="app-content">
+            
+            <!-- Левая колонка: Форма -->
+            <div class="form-section">
+                <div class="section-title">🐾 Взять питомца</div>
+                <form id="petForm">
+                    <div class="form-group-custom">
+                        <label for="name">Имя малыша:</label>
+                        <input type="text" id="name" placeholder="Кличка" required>
+                    </div>
+                    
+                    <div class="form-group-custom">
+                        <label for="species">Кто это?:</label>
+                        <select id="species" required>
+                            <option value="" disabled selected hidden>Выбери друга</option>
+                            <option value="🐱">Котик 🐱</option>
+                            <option value="🐶">Пёсель 🐶</option>
+                            <option value="🦦">Капибара 🦦</option>
+                            <option value="🦒">Жирафик 🦒</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="submit-btn">Приютить</button>
+                </form>
+            </div>
+
+            <!-- Правая колонка: Список -->
+            <div class="shelter-section">
+                <div class="section-title">🏡 Наши жители</div>
+                <div id="petsList" class="pet-grid">
+                    <!-- Карточки загружаются из Бэкенда -->
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+
+        // Изменение эмодзи в зависимости от уровня сытости
+        function getMoodEmoji(species, fullness) {
+            if (fullness >= 80) {
+                if (species === '🦒') return '🥦🦒'; // Сытый жирафик жует брокколи
+                return '🥰';
+            }
+            if (fullness <= 30) return '😢'; // Голодный малыш грустит
+            return species;
+        }
+
+        // Загрузка и отрисовка питомцев из базы данных
+        async function loadPets() {
+            try {
+                const res = await fetch(`${API_URL}/pets`);
+                const pets = await res.json();
+                const list = document.getElementById('petsList');
+                list.innerHTML = '';
+
+                if (pets.length === 0) {
+                    list.innerHTML = '<p style="font-size:8px; color:#cca4b0; text-align:center; grid-column: span 2;">В приюте пока пусто...</p>';
+                    return;
+                }
+
+                pets.forEach(pet => {
+                    const emoji = getMoodEmoji(pet.species, pet.fullness);
+                    const card = document.createElement('div');
+                    
+                    // Автоматически распределяем палитры SCSS по классам
+                    let styleClass = 'cat-style'; // по умолчанию котик
+                    if (pet.species === '🦒') styleClass = 'giraffe-style';
+                    if (pet.species === '🦦') styleClass = 'capy-style';     // Серо-голубая капибара
+                    if (pet.species === '🐶') styleClass = 'dog-style';      // Коричневый пёсель
+
+                    card.className = `pet-card ${styleClass}`;
+                    card.innerHTML = `
+                        <div class="pet-emoji">${emoji}</div>
+                        <h3>${pet.name}</h3>
+                        <p>Сытость: <strong class="fullness-text">${pet.fullness}%</strong></p>
+                        <div class="progress-container">
+                            <div class="progress-fill" style="width: ${pet.fullness}%"></div>
+                        </div>
+                        <button class="feed-btn" onclick="feedPet(${pet.id})">Покормить</button>
+                        <button class="feed-btn release-btn" onclick="releasePet(${pet.id})">На волю 🌸</button>
+                    `;
+                    list.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Ошибка подключения к бэкенду:", err);
+            }
+        }
+
+        // Отправка формы (Приютить нового питомца)
+        document.getElementById('petForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('name').value;
+            const species = document.getElementById('species').value;
+
+            await fetch(`${API_URL}/pets`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, species })
+            });
+
+            document.getElementById('name').value = '';
+            document.getElementById('species').selectedIndex = 0;
+            loadPets();
+        });
+
+        // Функция кормления (+10% сытости)
+        async function feedPet(id) {
+            await fetch(`${API_URL}/pets/${id}/feed`, { method: 'POST' });
+            loadPets();
+        }
+
+        // Функция удаления из базы данных (Отпустить на волю)
+        async function releasePet(id) {
+            if (confirm("Вы уверены, что готовы отпустить малыша на волю? 🌸")) {
+                await fetch(`${API_URL}/pets/${id}`, { method: 'DELETE' });
+                loadPets();
+            }
+        }
+
+        // Эффект Тамагочи: плавное падение сытости раз в 4 секунды прямо на экране
+        setInterval(() => {
+            const fills = document.querySelectorAll('.progress-fill');
+            fills.forEach(fill => {
+                const card = fill.closest('.pet-card');
+                const textNode = card.querySelector('.fullness-text');
+                let currentVal = parseInt(textNode.innerText);
+                
+                if (currentVal > 0) {
+                    let newVal = Math.max(0, currentVal - 5);
+                    fill.style.width = newVal + '%';
+                    textNode.innerText = newVal + '%';
+                }
+            });
+        }, 4000);
+
+        // Первичный запуск при открытии страницы
+        loadPets();
+    </script>
+</body>
+</html>
