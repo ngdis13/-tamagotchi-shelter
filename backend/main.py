@@ -7,10 +7,15 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 # Подключение к PostgreSQL
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/tamagotchi_db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://user:password@localhost:5432/tamagotchi_db")
+
+INSTANCE_ID = os.getenv("APP_INSTANCE_ID", "Instance-A")
+
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,11 +36,14 @@ async def lifespan(app: FastAPI):
 # Инициализируем приложение с отключенным строгим контролем слэшей
 app = FastAPI(lifespan=lifespan, redirect_slashes=False)
 
+
 class PetCreate(BaseModel):
     name: str
     species: str
 
 # Эндпоинты регистрируем ДО добавления CORS middleware
+
+
 @app.get("/api/pets")
 def get_pets():
     conn = get_db_connection()
@@ -43,7 +51,11 @@ def get_pets():
         cur.execute("SELECT * FROM pets ORDER BY id DESC;")
         pets = cur.fetchall()
     conn.close()
-    return pets
+    return {
+        "instance": INSTANCE_ID,
+        "data": [dict(pet) for pet in pets]
+    }
+
 
 @app.post("/api/pets")
 def create_pet(pet: PetCreate):
@@ -58,6 +70,7 @@ def create_pet(pet: PetCreate):
     conn.close()
     return new_pet
 
+
 @app.post("/api/pets/{pet_id}/feed")
 def feed_pet(pet_id: int):
     conn = get_db_connection()
@@ -67,7 +80,7 @@ def feed_pet(pet_id: int):
         if not pet:
             conn.close()
             raise HTTPException(status_code=404, detail="Питомец не найден")
-        
+
         new_fullness = min(100, pet['fullness'] + 10)
         cur.execute(
             "UPDATE pets SET fullness = %s WHERE id = %s RETURNING *;",
@@ -79,6 +92,8 @@ def feed_pet(pet_id: int):
     return updated_pet
 
 # Эндпоинт: Удалить питомца из базы данных (Отпустить на волю)
+
+
 @app.delete("/api/pets/{pet_id}")
 def delete_pet(pet_id: int):
     conn = get_db_connection()
@@ -89,7 +104,7 @@ def delete_pet(pet_id: int):
         if not pet:
             conn.close()
             raise HTTPException(status_code=404, detail="Питомец не найден")
-        
+
         # Удаляем из базы
         cur.execute("DELETE FROM pets WHERE id = %s;", (pet_id,))
         conn.commit()
