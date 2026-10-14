@@ -1,0 +1,21 @@
+# GOOD: .dockerignore — не пускаем в образ всё лишнее
+# Благодаря ему в контекст сборки не попадают мусор и секреты
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# секреты и окружение
+.env
+*.key
+*.crt
+*.pem
+
+# git и служебные файлы
+.git
+.gitignore
+
+# документация и лишние Dockerfile
+*.md
+Dockerfile.bad

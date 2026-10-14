@@ -1,0 +1,32 @@
+
+# ПЛОХОЙ Dockerfile 
+
+# bad practice 1: плавающий тег latest.
+# Версия Python не зафиксирована -> сборка невоспроизводима:
+# завтра образ может собраться на другой версии и что-то сломать
+FROM python:latest
+
+WORKDIR /app
+
+# bad practice 2: ADD вместо COPY
+# ADD умеет распаковывать архивы и качать по URL — здесь это не нужно, а поведение менее предсказуемо, чем у COPY
+#
+# bad practice 3: копируем ВЕСЬ контекст (ADD . /app)
+# В образ уезжают .git, reports/, ssl/nginx.key, auth/htpasswd, __pycache__
+#
+# bad practice 4: нет .dockerignore, который бы это отфильтровал
+ADD . /app
+
+# Переходим в папку бэкенда, чтобы запускать сервис оттуда.
+WORKDIR /app/backend
+
+# bad practice 5: код уже скопирован выше, поэтому любая правка main.py
+# сбрасывает кеш этого слоя и pip install выполняется заново -> долгая пересборка.
+RUN pip install -r requirements.txt
+
+# bad practice 6: нет USER -> контейнер работает от root.
+# bad practice 7: нет HEALTHCHECK -> Docker не знает, жив ли сервис.
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
