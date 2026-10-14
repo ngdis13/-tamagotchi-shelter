@@ -25,8 +25,14 @@ echo "-----------------------"
 echo ""
 
 # 4. Тест закрытой админки с правильным паролем
-echo "4. Проверка входа в /admin с паролем admin:supersecret:"
-curl -k -u admin:supersecret https://localhost/admin
+# Креды берём из переменных окружения, чтобы не хранить пароль в репозитории.
+# Пример запуска: ADMIN_USER=admin ADMIN_PASS=ваш_пароль ./check.sh
+echo "4. Проверка входа в /admin с паролем:"
+if [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASS" ]; then
+   curl -k -u "$ADMIN_USER:$ADMIN_PASS" https://localhost/admin
+else
+   echo "Пропущено: задайте ADMIN_USER и ADMIN_PASS в переменных окружения."
+fi
 echo -e "\n-----------------------"
 echo ""
 

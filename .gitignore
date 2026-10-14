@@ -10,3 +10,10 @@ tamagotchi.db
 # Node/Sass cache
 .sass-cache/
 .pnpm-store/
+
+# Secrets 
+auth/
+ssl/
+*.key
+*.crt
+*.pem
