@@ -42,7 +42,7 @@ class PetCreate(BaseModel):
     species: str
 
 # Эндпоинты регистрируем ДО добавления CORS middleware
-
+# тест кеша
 
 @app.get("/api/pets")
 def get_pets():
