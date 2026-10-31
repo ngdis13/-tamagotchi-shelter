@@ -1,0 +1,77 @@
+# Docker Compose — весь стек приюта: база + бэкенд + фронтенд
+
+services:
+  # База данных 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tamagotchi_db
+    volumes:
+      # Именованный том: данные переживают пересоздание контейнера
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      # БД живёт только в backend_net -> фронт её не видит
+      - backend_net
+    # Звёздочка: проверка готовности БД
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d tamagotchi_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    # Звёздочка: поднимать контейнер обратно, если упал
+    restart: unless-stopped
+
+  # Бэкенд (FastAPI) 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      # Хост db — это имя сервиса, Docker сам резолвит его в сети
+      DATABASE_URL: postgresql://user:password@db:5432/tamagotchi_db
+      APP_INSTANCE_ID: Instance-A
+    ports:
+      # Браузер ходит на localhost:8000 за API
+      - "8000:8000"
+    depends_on:
+      db:
+        # Звёздочка: стартуем только после готовности БД
+        condition: service_healthy
+    networks:
+      # Бэкенд в обеих сетях: видит и фронт, и БД
+      - frontend_net
+      - backend_net
+    # Звёздочка: перезапуск при падении
+    restart: unless-stopped
+    # Звёздочка: лимиты CPU и памяти
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+  # Фронтенд (статика через nginx)
+  frontend:
+    image: nginx:1.27-alpine
+    volumes:
+      # Раздаём папку frontend как статику
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      # Браузер открывает localhost:3000
+      - "3000:80"
+    networks:
+      # Фронт только в frontend_net -> к БД доступа нет
+      - frontend_net
+    depends_on:
+      - backend
+
+# Именованный том для данных PostgreSQL
+volumes:
+  pgdata:
+
+# Две сети для изоляции фронта от базы
+networks:
+  frontend_net:
+  backend_net:
