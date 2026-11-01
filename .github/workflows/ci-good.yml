@@ -93,7 +93,7 @@ jobs:
 
       # Если тут есть CRITICAL — шаг падает, и до пуша/деплоя дело не дойдёт
       - name: Trivy security gate (CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:sha-${{ env.SHORT_SHA }}
           format: table
@@ -104,7 +104,7 @@ jobs:
       # Отдельный прогон, чтобы в Summary попал полный отчёт по CRITICAL и HIGH
       - name: Trivy report
         if: always() && steps.build.outcome == 'success'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:sha-${{ env.SHORT_SHA }}
           format: table
