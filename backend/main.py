@@ -1,10 +1,13 @@
 import os
+from contextlib import asynccontextmanager
+
+import psycopg2
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from contextlib import asynccontextmanager
-import psycopg2
 from psycopg2.extras import RealDictCursor
+from pydantic import BaseModel
+
+from pet_logic import next_fullness
 
 # Подключение к PostgreSQL
 DATABASE_URL = os.getenv(
@@ -81,7 +84,7 @@ def feed_pet(pet_id: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Питомец не найден")
 
-        new_fullness = min(100, pet['fullness'] + 10)
+        new_fullness = next_fullness(pet['fullness'])
         cur.execute(
             "UPDATE pets SET fullness = %s WHERE id = %s RETURNING *;",
             (new_fullness, pet_id)

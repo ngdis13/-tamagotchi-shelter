@@ -1,0 +1,18 @@
+# «Жирный» Dockerfile — нужен только для Лабы 3, чтобы показать,
+# как Trivy валит пайплайн на старом базовом образе.
+#
+# python:3.8 уже не поддерживается, внутри Debian bullseye куча CVE.
+# Для прода такое брать нельзя, это специально плохой пример.
+
+FROM python:3.8
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY main.py pet_logic.py ./
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -26,7 +26,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # копируем только нужный код, а не весь репозиторий
-COPY main.py .
+COPY main.py pet_logic.py ./
 
 #  создаём отдельного пользователя и запускаемся от него, а не от root
 RUN useradd -m appuser

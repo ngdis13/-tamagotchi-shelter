@@ -1,0 +1,222 @@
+# ХОРОШИЙ пайплайн (Лаба 3).
+#
+# Стадии: lint/test -> build -> scan (Trivy) -> push -> deploy -> smoke test.
+#
+# Что исправлено по сравнению с плохим:
+#   * все экшены зафиксированы по версии, а не @main;
+#   * кеш pip и кеш слоёв Docker (type=gha);
+#   * секреты берутся из secrets/GITHUB_TOKEN, в yaml их нет;
+#   * Trivy валит пайплайн, если в образе есть CRITICAL;
+#   * деплой только после зелёных тестов и скана, только из main/lab3;
+#   * новый пуш отменяет предыдущий прогон (concurrency);
+#   * у GITHUB_TOKEN только те права, которые реально нужны.
+
+name: CI/CD (good)
+
+on:
+  push:
+    branches: [main, lab3]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      rollback_to:
+        description: "Тег для отката, например sha-610143c. Пусто — обычный деплой"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/tamagotchi-backend
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # 1. Проверка кода: линтер + тесты
+  lint-test:
+    name: Lint + tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        working-directory: backend
+        run: ruff check .
+
+      - name: Tests (pytest)
+        working-directory: backend
+        run: pytest -q
+
+  # 2. Сборка образа и security-gate
+  build-scan:
+    name: Build + Trivy scan
+    needs: lint-test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3.6.0
+
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@v6.10.0
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ env.SHORT_SHA }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Если тут есть CRITICAL — шаг падает, и до пуша/деплоя дело не дойдёт
+      - name: Trivy security gate (CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:sha-${{ env.SHORT_SHA }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Отдельный прогон, чтобы в Summary попал полный отчёт по CRITICAL и HIGH
+      - name: Trivy report
+        if: always() && steps.build.outcome == 'success'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:sha-${{ env.SHORT_SHA }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+          output: trivy-report.txt
+
+      - name: Show report
+        if: always() && steps.build.outcome == 'success'
+        run: cat trivy-report.txt >> "$GITHUB_STEP_SUMMARY"
+
+  # 3. Публикация образа в GHCR
+  push:
+    name: Push to GHCR
+    needs: build-scan
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Image tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3.6.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6.10.0
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 4. Деплой и проверка, что сервис реально отвечает
+  deploy:
+    name: Deploy + smoke test
+    needs: push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Deploy with compose
+        env:
+          BACKEND_IMAGE: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ needs.push.outputs.tag }}
+        run: docker compose -f docker-compose.ci.yml up -d --pull always
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/pets; then
+              echo
+              echo "Сервис отвечает, деплой прошёл"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Сервис не поднялся"
+          docker compose -f docker-compose.ci.yml logs --tail=50
+          exit 1
+
+  # 5. Откат на предыдущий тег (запускается вручную через Run workflow)
+  rollback:
+    name: Rollback
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_to != ''
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Deploy previous tag
+        env:
+          BACKEND_IMAGE: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ inputs.rollback_to }}
+        run: docker compose -f docker-compose.ci.yml up -d --pull always
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/pets; then
+              echo
+              echo "Откат на ${{ inputs.rollback_to }} прошёл"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "После отката сервис не отвечает"
+          exit 1

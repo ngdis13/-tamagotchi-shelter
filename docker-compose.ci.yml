@@ -1,0 +1,77 @@
+# Compose для деплоя из CI (Лаба 3).
+#
+# Отличие от обычного docker-compose.yml: бэкенд тут не собирается,
+# а скачивается готовым образом из GHCR. Какой именно тег — задаём
+# переменной IMAGE_TAG (sha-<коммит> или latest).
+#
+#   IMAGE_TAG=sha-610143c docker compose -f docker-compose.ci.yml up -d
+#
+# Том отдельный (pgdata_ci), чтобы деплой не затирал данные из лабы 2.
+# Имя проекта тоже своё, иначе compose пересоздаст контейнеры из лабы 2.
+
+name: tamagotchi-ci
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tamagotchi_db
+    volumes:
+      - pgdata_ci:/var/lib/postgresql/data
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d tamagotchi_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/ngdis13/tamagotchi-backend}:${IMAGE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/tamagotchi_db
+      # Подставляю тег в instance, чтобы в ответе /api/pets было видно,
+      # какая версия сейчас крутится
+      APP_INSTANCE_ID: ${IMAGE_TAG:-latest}
+    ports:
+      # Порт снаружи можно поменять, если 8000 уже занят
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - frontend_net
+      - backend_net
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/pets')"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    networks:
+      - frontend_net
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata_ci:
+
+networks:
+  frontend_net:
+  backend_net:

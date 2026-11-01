@@ -1,0 +1,58 @@
+# ПЛОХОЙ пайплайн (Лаба 3).
+#
+# Специально сделан с кучей bad practices, чтобы потом сравнить с хорошим.
+# Запускается только вручную или из ветки ci-bad-demo, чтобы не мешал
+# обычным пушам.
+
+name: CI/CD (bad)
+
+on:
+  push:
+    branches: [ci-bad-demo]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    # BAD 1: пароль от Docker Hub прямо в yaml.
+    # Он остаётся в истории git навсегда, даже если потом удалить строку.
+    env:
+      DOCKERHUB_USER: ngdis13
+      DOCKERHUB_PASSWORD: "SuperSecretPassword123"
+
+    steps:
+      # BAD 2: плавающий тег main. Сегодня экшен один, завтра другой,
+      # и сборка может неожиданно сломаться.
+      - uses: actions/checkout@main
+
+      # BAD 3: ставлю зависимости без кеша и без фиксированных версий.
+      # Каждый прогон качает всё заново, а версии пакетов могут поменяться.
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      # BAD 4: тесты есть, но если они упадут — пайплайн всё равно зелёный.
+      # Именно так плохой код и уезжает в прод.
+      - name: Tests
+        working-directory: backend
+        run: pytest -q
+        continue-on-error: true
+
+      # BAD 5: собираю образ без кеша слоёв и сразу с тегом latest.
+      # Непонятно, какой коммит внутри, и откатиться не на что.
+      - name: Build image
+        run: docker build -t ngdis13/tamagotchi-backend:latest ./backend
+
+      # BAD 6: никакого сканирования образа. Уязвимости никто не проверяет.
+      # BAD 7: пуш в любую ветку, включая фича-ветки.
+      - name: Login to Docker Hub
+        run: echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USER" --password-stdin
+        continue-on-error: true
+
+      - name: Push image
+        run: docker push ngdis13/tamagotchi-backend:latest
+        continue-on-error: true
+
+      # BAD 8: деплой сразу после пуша, без проверки, что сервис вообще жив.
+      - name: Deploy
+        run: docker compose up -d
