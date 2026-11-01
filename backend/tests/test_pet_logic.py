@@ -24,3 +24,8 @@ def test_custom_step():
 def test_negative_fullness_rejected():
     with pytest.raises(ValueError):
         next_fullness(-1)
+
+
+def test_naughty_demo():
+    # специально неверное ожидание
+    assert next_fullness(100) == 110
