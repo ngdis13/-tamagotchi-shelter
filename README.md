@@ -41,7 +41,30 @@ docker compose down -v
 
 * [**Отчёт по Лабораторной работе №0 — Создание CRUD-сервиса**](./reports/lab0/report_0.md) 🌟 *(Вы находитесь здесь)*
 * [**Лабораторная работа №1 — Настройка Nginx**](./reports/lab1/report_1.md) *(В процессе...)*
-* [**Лабораторная работа №2 — Контейнеризация с Docker Compose**](./reports/lab2/report_2.md) 
+* [**Лабораторная работа №2 — Контейнеризация с Docker Compose**](./reports/lab2/report_2.md)
+* [**Лабораторная работа №3 — CI/CD на GitHub Actions**](./reports/lab3/report_3.md)
+
+### 🔁 CI/CD (Лаба 3)
+
+Пайплайны лежат в `.github/workflows/`:
+
+* `ci-bad.yml` — антипример с bad practices (запускается вручную или из ветки `ci-bad-demo`);
+* `ci-good.yml` — lint/test → build → Trivy scan → push в GHCR → deploy → smoke test.
+
+Что можно прогнать локально:
+
+```bash
+# Тесты и линтер — то же, что делает стадия lint-test
+cd backend && pip install -r requirements-dev.txt && ruff check . && pytest -q
+
+# Скан образа через Trivy (в Docker, без установки)
+docker build -f backend/Dockerfile -t tama-backend:good backend
+./scripts/trivy-scan.sh tama-backend:good
+
+# Деплой конкретного тега и откат на предыдущий
+./scripts/deploy.sh sha-610143c
+./scripts/rollback.sh
+```
 
 ### 🔐 Секреты и безопасность
 
